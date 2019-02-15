@@ -164,32 +164,6 @@ def run_eye_color_shift():
     cv2.destroyAllWindows()
 
 
-def detect_eyes_roi():
-    cap = cv2.VideoCapture(0)
-
-    while True:
-        _, frame = cap.read(0) 
-        eyes = detect_eyes(frame)
-        eyes_roi =[]
-        found= False
-        
-        if len(eyes) == 2:
-            message= "Found eyes to track: distance={0} loc={1},{2}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1])
-            print(message)
-
-            for (x,y,w,h) in eyes: 
-                eyes_roi.append((y,x,y+h,x+w))
-
-            frame= shif_colors(frame,eyes)
-            found= True
-            
-
-        if found:
-            time.sleep(1)
-            return (frame,eyes)
-    
-    cv2.destroyAllWindows()
-
 def ask_for_tracker():
     print("0- BOOSTING: ")
     print("1- MIL: ")
@@ -201,62 +175,107 @@ def ask_for_tracker():
     return choice
 
 def get_tracker(choice):
-    if choice == '0':
+    if choice == 0:
         tracker = cv2.TrackerBoosting_create()
-    if choice == '1':
+    if choice == 1:
         tracker = cv2.TrackerMIL_create()
-    if choice == '2':
+    if choice == 2:
         tracker = cv2.TrackerKCF_create()
-    if choice == '3':
+    if choice == 3:
         tracker = cv2.TrackerTLD_create()
-    if choice == '4':
+    if choice == 4:
         tracker = cv2.TrackerMedianFlow_create()
 
     return tracker
 
-def use_tracker(firstframe,roi):
-    tracker_number = ask_for_tracker()
-    tracker = cv2.MultiTracker_create()
+def detect_eyes_loc(frame):
+    eyes = detect_eyes(frame)
+    eyes_roi =[]
+        
+    if len(eyes) == 2:
+        message= "Found eyes to track: distance={0} loc={1},{2}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1])
+        print(message)
+
+        for (x,y,w,h) in eyes: 
+            eyes_roi.append((y,x,y+h,x+w))
+            cv2.rectangle(frame, (x,y), (x+w,y+h), (255,255,255), 10)
+
+        # show_image(frame)
+        return (True,frame,eyes)
     
-    tracker.add(get_tracker(tracker_number), firstframe, tuple(roi[0]))
-    tracker.add(get_tracker(tracker_number), firstframe, tuple(roi[1]))
-    
-    tracker_name = str(get_tracker(tracker_number)).split()[0][1:]
+    return (False,False,False)
+
+
+def run():
+    WINDOW_NAME= "tracker"
 
     cap = cv2.VideoCapture(0)
-    cv2.namedWindow('image',cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('image', 600,600)
+    cv2.namedWindow(WINDOW_NAME,cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW_NAME, 600,600)
 
+    tracker_number = 0
+    tracker = cv2.MultiTracker_create()
+    tracker_name = str(get_tracker(tracker_number)).split()[0][1:]
+    trackers_initiated= False
+
+    eyes_loc_found= False
+    eyes=[]
 
     while True:
         _, frame = cap.read()
-        success, roi = tracker.update(frame)
+        if not eyes_loc_found:
+            eyes_loc_found, first_frame, eyes = detect_eyes_loc(frame)
 
-        (x_1,y_1,w_1,h_1) = tuple(map(int,roi[0]))
-        (x_2,y_2,w_2,h_2) = tuple(map(int,roi[1]))
+        
+        if eyes_loc_found and not trackers_initiated:
+            tracker.add(get_tracker(tracker_number), first_frame, tuple(eyes[0]))
+            tracker.add(get_tracker(tracker_number), first_frame, tuple(eyes[1]))
+            trackers_initiated= True
 
-        eyes= get_center_of_eyes_coords([(x_1,y_1,w_1,h_1),(x_2,y_2,w_2,h_2)])
+        if eyes_loc_found and trackers_initiated:
+            success, eyes = tracker.update(frame)
 
-        if success:
-            message= "distance={0} loc={1},{2} tracker={3}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1],tracker_name)
-            write_text_on_image(frame,message)
-            print(message)
-            frame= shif_colors(frame,eyes)
-        else :
-            cv2.putText(frame, "image", (100,200), cv2.FONT_HERSHEY_SIMPLEX, 1,(0,0,255),3)
+            (x_1,y_1,w_1,h_1) = tuple(map(int,eyes[0]))
+            (x_2,y_2,w_2,h_2) = tuple(map(int,eyes[1]))
 
-        cv2.imshow("image", frame)
+            eyes= get_center_of_eyes_coords([(x_1,y_1,w_1,h_1),(x_2,y_2,w_2,h_2)])
+
+            if success:
+                message= "distance={0} loc={1},{2} tracker={3}({4})".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1],tracker_name, tracker_number)
+                write_text_on_image(frame,message)
+                print(message)
+                frame= shif_colors(frame,eyes)
+            else :
+                cv2.putText(frame, "ERROR! Cant Track!", (200,200), cv2.FONT_HERSHEY_SIMPLEX, 1,(0,0,255),3)
+
+
+        cv2.imshow(WINDOW_NAME, frame)
+ 
 
         k = cv2.waitKey(1) & 0xff
-        if k == 27 : 
+        if k == 27: 
             break
+        
+        if k == ord('r') or k == ord('q') or k == ord('w'):
+            eyes_loc_found= False
+            trackers_initiated= False
+            tracker = cv2.MultiTracker_create()
+        
+        if k == ord('q') and tracker_number > 0:
+            tracker_number -= 1
+            tracker_name = str(get_tracker(tracker_number)).split()[0][1:]
+
+        if k == ord('w') and tracker_number < 4:
+            tracker_number += 1
+            tracker_name = str(get_tracker(tracker_number)).split()[0][1:]
+
+
             
     cap.release()
     cv2.destroyAllWindows()
 
 
-firstframe, eyes_rois= detect_eyes_roi()
-print(eyes_rois)
-use_tracker(firstframe,eyes_rois)
+run()
 
-# run_eye_color_shift()
+            
+            
