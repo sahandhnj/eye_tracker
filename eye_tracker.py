@@ -79,7 +79,7 @@ def normalize_it(n1,n2,max_n,min_n):
 def shif_colors(image,eyes):
     canvas= np.zeros(image.shape,np.uint8)
     
-    for i,eye in enumerate(eyes):
+    for eye in eyes:
         x= eye[0]
         y= eye[1]
         cv2.circle(img=canvas, center=(x,y), radius=15, color=(255,255,255), thickness=-1)
@@ -88,35 +88,50 @@ def shif_colors(image,eyes):
     max_y= canvas.shape[1]
     distance= eyes[1][0]-eyes[0][0]
 
-    multiplier= 1.5
+    multiplier= 1
     norm_x= normalize_it(eyes[0][0],eyes[1][0],max_x,0) * multiplier
     norm_y= normalize_it(eyes[0][1],eyes[1][1],max_y,0) * multiplier
     norm_z= normalize_it(distance,distance,300,50) * multiplier
 
     # image[canvas!=0] = (0,0,255)
-    filter = np.uint8(np.multiply(canvas, [norm_x,norm_y,norm_z]))  
+    filter = np.uint8(np.multiply(canvas, [norm_x,norm_z,norm_y]))  
     image = image+filter
 
     return image
+
+def write_text_on_image(img, text):
+    font = cv2.FONT_HERSHEY_COMPLEX
+    cv2.putText(img,text=text,org=(10,20), fontFace=font,fontScale= 0.5,color=(255,255,255),thickness=1,lineType=cv2.LINE_AA)
 
 def run_eye_color_shift():
     cap = cv2.VideoCapture(0)
     cv2.namedWindow('image',cv2.WINDOW_NORMAL)
     cv2.resizeWindow('image', 600,600)
+    
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    fps = cap.get(cv2.CAP_PROP_FPS)/2
+ 
+    fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
+    out = cv2.VideoWriter("output/output.avi",fourcc, fps, (frame_width,frame_height),True)
 
     while True:
         _, frame = cap.read(0) 
         eyes = get_center_of_eyes(frame)
 
         if len(eyes) != 2:
-            print("wrong number of eyes(%d) have been detected" % len(eyes))
+            message= "wrong number of eyes(%d) detected" % len(eyes)
+            write_text_on_image(frame,message)
+            print(message)
         else:
-            print("detected eyes distance={0} at {1} {2}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1]))
+            message= "eyes detected: distance={0} loc={1},{2}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1])
+            write_text_on_image(frame,message)
+            print(message)
             frame= shif_colors(frame,eyes)
 
 
         cv2.imshow("image", frame) 
-
+        out.write(frame)
 
         c = cv2.waitKey(1) 
         if c == 27: 
