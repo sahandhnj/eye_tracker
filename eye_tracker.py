@@ -1,23 +1,47 @@
 import numpy as np
-import cv2 
+import cv2
 import time
 
-eye_cascade = cv2.CascadeClassifier('haarcascade/haarcascade_eye_tree_eyeglasses.xml')
+eye_cascade = cv2.CascadeClassifier(
+    'haarcascade/haarcascade_eye_tree_eyeglasses.xml')
+
+
+def show_image(img):
+    cv2.imshow('image', img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
 
 def detect_eyes(img):
     face_img = img.copy()
-    eyes = eye_cascade.detectMultiScale(face_img,scaleFactor=1.2, minNeighbors=5) 
-        
+    eyes = eye_cascade.detectMultiScale(
+        face_img, scaleFactor=1.2, minNeighbors=5)
+
     return eyes
+
 
 def get_center_of_eyes(img):
     eyes_coords = detect_eyes(img)
-    eyes=[]
+    eyes = []
 
-    for (x,y,w,h) in eyes_coords:
-        center_x= int((x*2+w)/2)
-        center_y= int((y*2+h)/2)
-        eyes.append([center_x,center_y])
+    for (x, y, w, h) in eyes_coords:
+        center_x = int((x*2+w)/2)
+        center_y = int((y*2+h)/2)
+        eyes.append([center_x, center_y])
+
+    if len(eyes) == 2:
+        eyes = sorted(eyes, key=lambda x: x[0])
+
+    return eyes
+
+
+def get_center_of_eyes_coords(coords):
+    eyes = []
+
+    for (x, y, w, h) in coords:
+        center_x = int((x*2+w)/2)
+        center_y = int((y*2+h)/2)
+        eyes.append([center_x, center_y])
 
     if len(eyes) == 2:
         eyes= sorted(eyes, key=lambda x: x[0])
@@ -139,7 +163,100 @@ def run_eye_color_shift():
 
     cv2.destroyAllWindows()
 
-run_eye_color_shift()
+
+def detect_eyes_roi():
+    cap = cv2.VideoCapture(0)
+
+    while True:
+        _, frame = cap.read(0) 
+        eyes = detect_eyes(frame)
+        eyes_roi =[]
+        found= False
+        
+        if len(eyes) == 2:
+            message= "Found eyes to track: distance={0} loc={1},{2}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1])
+            print(message)
+
+            for (x,y,w,h) in eyes: 
+                eyes_roi.append((y,x,y+h,x+w))
+
+            frame= shif_colors(frame,eyes)
+            found= True
+            
+
+        if found:
+            time.sleep(1)
+            return (frame,eyes)
+    
+    cv2.destroyAllWindows()
+
+def ask_for_tracker():
+    print("0- BOOSTING: ")
+    print("1- MIL: ")
+    print("2- KCF: ")
+    print("3- TLD: ")
+    print("4- MEDIANFLOW: ")
+    choice = input("Please select your tracker: ")
+
+    return choice
+
+def get_tracker(choice):
+    if choice == '0':
+        tracker = cv2.TrackerBoosting_create()
+    if choice == '1':
+        tracker = cv2.TrackerMIL_create()
+    if choice == '2':
+        tracker = cv2.TrackerKCF_create()
+    if choice == '3':
+        tracker = cv2.TrackerTLD_create()
+    if choice == '4':
+        tracker = cv2.TrackerMedianFlow_create()
+
+    return tracker
+
+def use_tracker(firstframe,roi):
+    tracker_number = ask_for_tracker()
+    tracker = cv2.MultiTracker_create()
+    
+    tracker.add(get_tracker(tracker_number), firstframe, tuple(roi[0]))
+    tracker.add(get_tracker(tracker_number), firstframe, tuple(roi[1]))
+    
+    tracker_name = str(get_tracker(tracker_number)).split()[0][1:]
+
+    cap = cv2.VideoCapture(0)
+    cv2.namedWindow('image',cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('image', 600,600)
 
 
+    while True:
+        _, frame = cap.read()
+        success, roi = tracker.update(frame)
 
+        (x_1,y_1,w_1,h_1) = tuple(map(int,roi[0]))
+        (x_2,y_2,w_2,h_2) = tuple(map(int,roi[1]))
+
+        eyes= get_center_of_eyes_coords([(x_1,y_1,w_1,h_1),(x_2,y_2,w_2,h_2)])
+
+        if success:
+            message= "distance={0} loc={1},{2} tracker={3}".format(eyes[1][0]-eyes[0][0],eyes[0],eyes[1],tracker_name)
+            write_text_on_image(frame,message)
+            print(message)
+            frame= shif_colors(frame,eyes)
+        else :
+            cv2.putText(frame, "image", (100,200), cv2.FONT_HERSHEY_SIMPLEX, 1,(0,0,255),3)
+
+        cv2.imshow("image", frame)
+
+        k = cv2.waitKey(1) & 0xff
+        if k == 27 : 
+            break
+            
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+firstframe, eyes_rois= detect_eyes_roi()
+print(eyes_rois)
+use_tracker(firstframe,eyes_rois)
+
+# run_eye_color_shift()
